@@ -1,39 +1,85 @@
 SHELL := /bin/bash
 USER_FLAG := $(shell [[ -z $$VIRTUAL_ENV ]] && echo '--user')
-# .DEFAULT_GOAL := test
-# FORCE:
+PY?=python3
+PELICAN?=pelican
+PELICANOPTS=
 
-# init:
-# 	pip install $(USER_FLAG) -r requirements.txt
+BASEDIR=$(CURDIR)
+INPUTDIR=$(BASEDIR)/content
+OUTPUTDIR=$(BASEDIR)/output
+CONFFILE=$(BASEDIR)/pelicanconf.py
+PUBLISHCONF=$(BASEDIR)/publishconf.py
+
+S3_BUCKET=sogdian-blog
+
+
+DEBUG ?= 0
+ifeq ($(DEBUG), 1)
+	PELICANOPTS += -D
+endif
+
+RELATIVE ?= 0
+ifeq ($(RELATIVE), 1)
+	PELICANOPTS += --relative-urls
+endif
+
+help:
+	@echo 'Makefile for a pelican Web site                                           '
+	@echo '                                                                          '
+	@echo 'Usage:                                                                    '
+	@echo '   make html                           (re)generate the web site          '
+	@echo '   make clean                          remove the generated files         '
+	@echo '   make regenerate                     regenerate files upon modification '
+	@echo '   make publish                        generate using production settings '
+	@echo '   make serve [PORT=8000]              serve site at http://localhost:8000'
+	@echo '   make serve-global [SERVER=0.0.0.0]  serve (as root) to $(SERVER):80    '
+	@echo '   make devserver [PORT=8000]          serve and regenerate together      '
+	@echo '   make ssh_upload                     upload the web site via SSH        '
+	@echo '   make rsync_upload                   upload the web site via rsync+ssh  '
+	@echo '   make s3_upload                      upload the web site via S3         '
+	@echo '                                                                          '
+	@echo 'Set the DEBUG variable to 1 to enable debugging, e.g. make DEBUG=1 html   '
+	@echo 'Set the RELATIVE variable to 1 to enable relative urls                    '
+	@echo '                                                                          '
+
+html:
+	$(PELICAN) $(INPUTDIR) -o $(OUTPUTDIR) -s $(CONFFILE) $(PELICANOPTS)
+
+clean:
+	[ ! -d $(OUTPUTDIR) ] || rm -rf $(OUTPUTDIR)
+
+regenerate:
+	$(PELICAN) -r $(INPUTDIR) -o $(OUTPUTDIR) -s $(CONFFILE) $(PELICANOPTS)
+
+serve:
+ifdef PORT
+	$(PELICAN) -l $(INPUTDIR) -o $(OUTPUTDIR) -s $(CONFFILE) $(PELICANOPTS) -p $(PORT)
+else
+	$(PELICAN) -l $(INPUTDIR) -o $(OUTPUTDIR) -s $(CONFFILE) $(PELICANOPTS)
+endif
+
+serve-global:
+ifdef SERVER
+	$(PELICAN) -l $(INPUTDIR) -o $(OUTPUTDIR) -s $(CONFFILE) $(PELICANOPTS) -p $(PORT) -b $(SERVER)
+else
+	$(PELICAN) -l $(INPUTDIR) -o $(OUTPUTDIR) -s $(CONFFILE) $(PELICANOPTS) -p $(PORT) -b 0.0.0.0
+endif
+
+
+devserver:
+ifdef PORT
+	$(PELICAN) -lr $(INPUTDIR) -o $(OUTPUTDIR) -s $(CONFFILE) $(PELICANOPTS) -p $(PORT)
+else
+	$(PELICAN) -lr $(INPUTDIR) -o $(OUTPUTDIR) -s $(CONFFILE) $(PELICANOPTS)
+endif
+
+publish:
+	$(PELICAN) $(INPUTDIR) -o $(OUTPUTDIR) -s $(PUBLISHCONF) $(PELICANOPTS)
+
+s3_upload: publish
+	aws s3 sync $(OUTPUTDIR)/ s3://$(S3_BUCKET) --acl public-read --delete
 
 init-dev:
 	pip install $(USER_FLAG) -r requirements-dev.txt
 
-# analyze:
-# 	flake8 file_processing_pipeline
-# 	pylint file_processing_pipeline
-#
-# test: export PYTHONDONTWRITEBYTECODE = 1
-# test: FORCE analyze
-# 	rm -rf ./test/resources/output_root/
-# 	python -m pytest -x -s -p no:cacheprovider --cov-report term-missing --cov=file_processing_pipeline test --cov-fail-under=100 --basetemp=./tmp/
-#
-# build: FORCE
-# 	python setup.py bdist_wheel
-#
-# install: build
-# 	pip install $(USER_FLAG) --upgrade --force-reinstall dist/file_processing_pipeline-1.0.0-py3-none-any.whl
-#
-# uninstall:
-# 	pip uninstall $(USER_FLAG) -y file_processing_pipeline
-#
-# clean:
-# 	rm -rf ./build/
-# 	rm -rf ./file_processing_pipeline.egg-info/
-# 	rm -rf ./dist/
-# 	rm -rf ./test/resources/output_root/
-#
-# diagram:
-# 	pyreverse -o png file_processing_pipeline
-# 	rm classes.png
-# 	mv packages.png docs/
+.PHONY: html help clean regenerate serve serve-global devserver publish s3_upload
